@@ -1,0 +1,35 @@
+# Node/React
+node_modules/
+dist/
+dist-ssr/
+*.local
+.eslintcache
+
+# Python/FastAPI
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local databases
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Docker/System
+.DS_Store
+Thumbs.db
+*.log
+
+# Media uploads (except test MP3 and folder placeholders)
+backend/uploads/*
+!backend/uploads/.gitkeep
+!backend/uploads/zenlish-test-02-95-97.mp3
