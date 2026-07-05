@@ -140,6 +140,11 @@ export const api = {
   deleteLesson: (id: number) => apiFetch<{ message: string }>(`lessons/${id}`, {
     method: 'DELETE',
   }),
+  autoTranscribe: (id: number) => {
+    return apiFetch<{ message: string; segments_created: number }>(`lessons/${id}/auto-transcribe`, {
+      method: 'POST',
+    });
+  },
   getSegmentDetails: (id: number) => apiFetch<SegmentDetails>(`segments/${id}`),
   toggleBookmark: (id: number) => apiFetch<BookmarkResponse>(`segments/${id}/bookmark`, {
     method: 'POST',

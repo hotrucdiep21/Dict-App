@@ -194,3 +194,11 @@ async def upload_transcript(id: int, file: UploadFile = File(...), service: Less
         format=transcript.format,
         segments_created=len(transcript.lesson.segments)
     )
+
+@router.post("/{id}/auto-transcribe")
+def auto_transcribe_lesson(id: int, service: LessonService = Depends(get_lesson_service)):
+    segments_created = service.auto_transcribe(lesson_id=id)
+    return {
+        "message": "Auto-transcription completed successfully",
+        "segments_created": segments_created
+    }

@@ -20,6 +20,7 @@ export default function Dashboard() {
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [srtFile, setSrtFile] = useState<File | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [creationStatus, setCreationStatus] = useState('');
 
   useEffect(() => {
     loadData();
@@ -49,16 +50,22 @@ export default function Dashboard() {
     try {
       setIsCreating(true);
       // 1. Create Lesson
+      setCreationStatus('Creating lesson metadata...');
       const lesson = await api.createLesson(newTitle);
       
       // 2. Upload Audio if present
       if (audioFile) {
+        setCreationStatus('Uploading audio file...');
         await api.uploadAudio(lesson.id, audioFile);
       }
       
-      // 3. Upload Subtitles if present
+      // 3. Upload Subtitles if present, otherwise auto-transcribe
       if (srtFile) {
+        setCreationStatus('Uploading subtitle file...');
         await api.uploadTranscript(lesson.id, srtFile);
+      } else {
+        setCreationStatus('Transcribing audio automatically (this may take a few seconds)...');
+        await api.autoTranscribe(lesson.id);
       }
 
       // Refresh
@@ -67,6 +74,7 @@ export default function Dashboard() {
       setNewTitle('');
       setAudioFile(null);
       setSrtFile(null);
+      setCreationStatus('');
     } catch (err: any) {
       alert(err.message || 'Error occurred while creating lesson');
     } finally {
@@ -429,7 +437,7 @@ export default function Dashboard() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">SRT TRANSCRIPT (.srt)</label>
+                  <label className="block text-xs font-semibold text-slate-350 mb-1">SRT TRANSCRIPT (.srt) - OPTIONAL</label>
                   <div className="relative border border-dashed border-slate-800 hover:border-indigo-500 bg-slate-950 rounded-xl p-4 text-center cursor-pointer transition">
                     <input 
                       type="file"
@@ -445,9 +453,17 @@ export default function Dashboard() {
                 </div>
               </div>
 
+              {isCreating && creationStatus && (
+                <div className="bg-indigo-500/10 border border-indigo-500/25 text-indigo-300 text-xs px-4 py-3 rounded-xl flex items-center gap-2.5 animate-pulse">
+                  <RefreshCw className="animate-spin text-indigo-400 shrink-0" size={14} />
+                  <span>{creationStatus}</span>
+                </div>
+              )}
+
               <div className="flex justify-end gap-3 pt-4 border-t border-slate-900">
                 <button
                   type="button"
+                  disabled={isCreating}
                   onClick={() => setIsModalOpen(false)}
                   className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white font-medium text-sm transition"
                 >

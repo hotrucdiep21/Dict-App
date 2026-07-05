@@ -2,6 +2,9 @@ import os
 from mutagen import File
 from typing import List
 from sqlalchemy import select
+from pydub import AudioSegment
+from pydub.silence import detect_nonsilent
+import speech_recognition as sr
 
 from models.lesson import LessonORM
 from models.audio import AudioFileORM
@@ -173,3 +176,105 @@ class LessonService:
                     pass
 
         self.lesson_repo.delete(lesson)
+
+    def auto_transcribe(self, lesson_id: int) -> int:
+        lesson = self.get_lesson(lesson_id)
+        if not lesson.audio_file:
+            raise InvalidFileException("Audio file must be uploaded before auto-transcribing.")
+
+        filepath = lesson.audio_file.filepath
+        if not os.path.exists(filepath):
+            raise InvalidFileException("Uploaded audio file not found on disk.")
+
+        try:
+            audio = AudioSegment.from_file(filepath)
+        except Exception as e:
+            raise InvalidFileException(f"Failed to load audio file for transcription: {str(e)}")
+
+        min_silence_len = 700
+        silence_thresh = -40
+        
+        nonsilent_ranges = detect_nonsilent(
+            audio,
+            min_silence_len=min_silence_len,
+            silence_thresh=silence_thresh
+        )
+
+        if not nonsilent_ranges:
+            nonsilent_ranges = [(0, len(audio))]
+
+        temp_dir = os.path.join(settings.upload_dir, "temp_chunks")
+        os.makedirs(temp_dir, exist_ok=True)
+
+        recognizer = sr.Recognizer()
+        segments_data = []
+
+        for idx, (start, end) in enumerate(nonsilent_ranges, 1):
+            chunk = audio[start:end]
+            temp_wav = os.path.join(temp_dir, f"temp_{lesson_id}_{idx}.wav")
+            
+            try:
+                chunk.export(temp_wav, format="wav")
+                with sr.AudioFile(temp_wav) as source:
+                    audio_data = recognizer.record(source)
+                    text = recognizer.recognize_google(audio_data, language="en-US")
+                    clean_text = text.strip()
+                    
+                    if clean_text:
+                        segments_data.append({
+                            "start_time": round(start / 1000.0, 3),
+                            "end_time": round(end / 1000.0, 3),
+                            "duration": round((end - start) / 1000.0, 3),
+                            "transcript": clean_text
+                        })
+            except sr.UnknownValueError:
+                pass
+            except Exception as e:
+                print(f"Failed to transcribe chunk {idx}: {e}")
+            finally:
+                if os.path.exists(temp_wav):
+                    try:
+                        os.remove(temp_wav)
+                    except Exception:
+                        pass
+
+        try:
+            os.rmdir(temp_dir)
+        except Exception:
+            pass
+
+        if not segments_data:
+            raise InvalidFileException("Failed to transcribe any intelligible speech from the audio file. Make sure the audio contains spoken English and has good quality.")
+
+        for existing_segment in list(lesson.segments):
+            self.lesson_repo.db.delete(existing_segment)
+        self.lesson_repo.db.flush()
+
+        full_transcript_text = " ".join(d["transcript"] for d in segments_data)
+
+        if lesson.transcript:
+            self.lesson_repo.db.delete(lesson.transcript)
+            self.lesson_repo.db.flush()
+
+        transcript = TranscriptORM(
+            lesson_id=lesson_id,
+            raw_content=full_transcript_text,
+            format="txt"
+        )
+        self.lesson_repo.save_transcript(transcript)
+
+        for i, data in enumerate(segments_data, 1):
+            segment = SegmentORM(
+                lesson_id=lesson_id,
+                index=i,
+                start_time=data["start_time"],
+                end_time=data["end_time"],
+                duration=data["duration"],
+                transcript=data["transcript"],
+                status="NOT_STARTED",
+                is_bookmarked=False
+            )
+            self.lesson_repo.db.add(segment)
+
+        self.lesson_repo.db.commit()
+        return len(segments_data)

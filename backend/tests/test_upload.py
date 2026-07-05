@@ -133,3 +133,43 @@ def test_lesson_full_lifecycle():
     # 12. Verify Cleanup
     response = client.get(f"/api/v1/lessons/{lesson_id}")
     assert response.status_code == 404
+
+def test_auto_transcription():
+    # 1. Create Lesson
+    response = client.post("/api/v1/lessons", json={"title": "Auto STT Test Lesson"})
+    assert response.status_code == 201
+    lesson_id = response.json()["id"]
+
+    # 2. Upload Real MP3 File
+    mp3_path = "uploads/zenlish-test-02-95-97.mp3"
+    if os.path.exists(mp3_path):
+        with open(mp3_path, "rb") as f:
+            audio_data = f.read()
+    else:
+        audio_data = b"ID3\x03\x00\x00\x00\x00\x00\x00"
+
+    response = client.post(
+        f"/api/v1/lessons/{lesson_id}/audio",
+        files={"file": ("test.mp3", audio_data, "audio/mpeg")}
+    )
+    assert response.status_code == 200
+
+    # 3. Call Auto Transcribe endpoint
+    if os.path.exists(mp3_path):
+        response = client.post(f"/api/v1/lessons/{lesson_id}/auto-transcribe")
+        assert response.status_code == 200
+        data = response.json()
+        assert "segments_created" in data
+        assert data["segments_created"] > 0
+
+        # Check Segments created
+        response = client.get(f"/api/v1/lessons/{lesson_id}/segments")
+        assert response.status_code == 200
+        segments = response.json()
+        assert len(segments) > 0
+        assert segments[0]["status"] == "NOT_STARTED"
+        assert len(segments[0]["masked_transcript"]) > 0
+
+    # 4. Clean up
+    client.delete(f"/api/v1/lessons/{lesson_id}")
+
